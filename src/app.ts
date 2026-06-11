@@ -2,6 +2,10 @@ import express, { Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
 import pool from './config/db';
+import vehiculosRoutes from './routes/vehiculos.routes';
+import repuestosRoutes from './routes/repuestos.routes';
+import usuariosRoutes from './routes/usuarios.routes';
+import citasRoutes from './routes/citas.routes';
 
 dotenv.config();
 
@@ -39,6 +43,12 @@ app.get('/health', async (req: Request, res: Response): Promise<void> => {
     });
   }
 });
+
+// Routes
+app.use('/api/vehiculos', vehiculosRoutes);
+app.use('/api/repuestos', repuestosRoutes);
+app.use('/api/usuarios', usuariosRoutes);
+app.use('/api/citas', citasRoutes);
 
 // Fallback for undefined routes (JSON only)
 app.use((req: Request, res: Response): void => {
