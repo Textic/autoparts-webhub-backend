@@ -1,67 +1,76 @@
--- Script de Creación de Estructura de Datos para AutoParts WebHub
--- Motor recomendado: MariaDB / MySQL
--- Nivel de Normalización: 3FN
+-- AutoParts WebHub Database Schema (3NF)
+-- Recommended Engine: MariaDB / MySQL
 
 CREATE DATABASE IF NOT EXISTS autoparts_webhub_db;
 USE autoparts_webhub_db;
 
--- 1. Tabla de Usuarios (Manejo de clientes y administradores)
-CREATE TABLE usuarios (
-    id_usuario INT AUTO_INCREMENT PRIMARY KEY,
-    nombre VARCHAR(100) NOT NULL,
+-- 1. Roles Table
+CREATE TABLE roles (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(50) NOT NULL UNIQUE
+) ENGINE=InnoDB;
+
+-- 2. Users Table (handles clients and administrators)
+CREATE TABLE users (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
     email VARCHAR(100) NOT NULL UNIQUE,
     password_hash VARCHAR(255) NOT NULL,
-    rol ENUM('cliente_particular', 'mecanico_independiente', 'administrador') NOT NULL DEFAULT 'cliente_particular',
-    fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    role_id INT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE RESTRICT
 ) ENGINE=InnoDB;
 
--- 2. Tabla de Vehículos (Taxonomía para la búsqueda)
-CREATE TABLE vehiculos (
-    id_vehiculo INT AUTO_INCREMENT PRIMARY KEY,
-    marca VARCHAR(50) NOT NULL,
-    modelo VARCHAR(50) NOT NULL,
-    anio_fabricacion INT NOT NULL,
-    motorizacion VARCHAR(50) NOT NULL,
-    -- Índice para acelerar el filtrado en cascada del catálogo
-    INDEX idx_vehiculo_busqueda (marca, modelo, anio_fabricacion)
+-- 3. Vehicles Table (search taxonomy)
+CREATE TABLE vehicles (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    brand VARCHAR(50) NOT NULL,
+    model VARCHAR(50) NOT NULL,
+    manufacturing_year INT NOT NULL,
+    engine_type VARCHAR(50) NOT NULL,
+    -- Index to speed up cascaded catalog filtering
+    INDEX idx_vehicle_search (brand, model, manufacturing_year)
 ) ENGINE=InnoDB;
 
--- 3. Tabla de Repuestos (Catálogo e Inventario Físico)
-CREATE TABLE repuestos (
-    id_repuesto INT AUTO_INCREMENT PRIMARY KEY,
+-- 4. Parts Table (catalog & physical inventory)
+CREATE TABLE parts (
+    id INT AUTO_INCREMENT PRIMARY KEY,
     sku VARCHAR(50) NOT NULL UNIQUE,
-    nombre VARCHAR(150) NOT NULL,
-    categoria VARCHAR(100) NOT NULL,
-    precio INT NOT NULL,
-    stock_disponible INT NOT NULL DEFAULT 0,
-    ubicacion_bodega VARCHAR(50) NOT NULL,
-    -- Índice para agilizar la navegación por categorías
-    INDEX idx_repuesto_categoria (categoria)
+    name VARCHAR(150) NOT NULL,
+    category VARCHAR(100) NOT NULL,
+    price INT NOT NULL,
+    available_stock INT NOT NULL DEFAULT 0,
+    warehouse_location VARCHAR(50) NOT NULL,
+    -- Index to improve category navigation speed
+    INDEX idx_part_category (category)
 ) ENGINE=InnoDB;
 
--- 4. Tabla Intermedia de Compatibilidad (Relación Muchos a Muchos)
--- Conecta qué repuesto sirve exactamente para qué vehículo(s)
-CREATE TABLE compatibilidad_repuestos (
-    id_repuesto INT NOT NULL,
-    id_vehiculo INT NOT NULL,
-    PRIMARY KEY (id_repuesto, id_vehiculo),
-    FOREIGN KEY (id_repuesto) REFERENCES repuestos(id_repuesto) ON DELETE CASCADE,
-    FOREIGN KEY (id_vehiculo) REFERENCES vehiculos(id_vehiculo) ON DELETE CASCADE
+-- 5. Part Compatibilities Table (N:M Relationship)
+-- Connects which part fits which vehicle(s)
+CREATE TABLE part_compatibilities (
+    part_id INT NOT NULL,
+    vehicle_id INT NOT NULL,
+    PRIMARY KEY (part_id, vehicle_id),
+    FOREIGN KEY (part_id) REFERENCES parts(id) ON DELETE CASCADE,
+    FOREIGN KEY (vehicle_id) REFERENCES vehicles(id) ON DELETE CASCADE
 ) ENGINE=InnoDB;
 
--- 5. Tabla de Citas de Retiro (Logística y Agenda MCP)
-CREATE TABLE citas_retiro (
-    id_cita INT AUTO_INCREMENT PRIMARY KEY,
-    id_usuario INT NOT NULL,
-    id_repuesto INT NOT NULL,
-    cantidad INT NOT NULL DEFAULT 1,
-    fecha_cita DATE NOT NULL,
-    hora_cita TIME NOT NULL,
-    estado ENUM('pendiente', 'completado', 'cancelado') NOT NULL DEFAULT 'pendiente',
-    creado_por_ia TINYINT(1) NOT NULL DEFAULT 0, -- Bandera para saber si lo agendó el chatbot
-    fecha_creacion TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (id_usuario) REFERENCES usuarios(id_usuario) ON DELETE RESTRICT,
-    FOREIGN KEY (id_repuesto) REFERENCES repuestos(id_repuesto) ON DELETE RESTRICT,
-    -- Previene colisiones: nadie puede agendar en la misma fecha y hora exacta
-    UNIQUE KEY idx_agenda_unica (fecha_cita, hora_cita) 
+-- 6. Appointments Table (logistics & pickup schedule)
+CREATE TABLE appointments (
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    part_id INT NOT NULL,
+    quantity INT NOT NULL DEFAULT 1,
+    appointment_date DATE NOT NULL,
+    appointment_time TIME NOT NULL,
+    status ENUM('pending', 'completed', 'cancelled') NOT NULL DEFAULT 'pending',
+    created_by_ia TINYINT(1) NOT NULL DEFAULT 0, -- Flag indicating if scheduled by chatbot
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE RESTRICT,
+    FOREIGN KEY (part_id) REFERENCES parts(id) ON DELETE RESTRICT,
+    -- Prevents schedule collisions
+    UNIQUE KEY idx_unique_schedule (appointment_date, appointment_time)
 ) ENGINE=InnoDB;
+
+-- Seed default roles
+INSERT INTO roles (name) VALUES ('client'), ('mechanic'), ('administrator');

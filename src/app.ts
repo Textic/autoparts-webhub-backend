@@ -1,21 +1,30 @@
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import { ExpressAuth } from '@auth/express';
 import pool from './config/db';
-import vehiculosRoutes from './routes/vehiculos.routes';
-import repuestosRoutes from './routes/repuestos.routes';
-import usuariosRoutes from './routes/usuarios.routes';
-import citasRoutes from './routes/citas.routes';
+import { authConfig } from './config/auth.config';
+import vehiclesRoutes from './routes/vehicles.routes';
+import partsRoutes from './routes/parts.routes';
+import usersRoutes from './routes/users.routes';
+import appointmentsRoutes from './routes/appointments.routes';
+import mcpRoutes from './mcp/mcp.routes';
 
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// Trust proxy for secure cookies when running behind proxies
+app.set('trust proxy', true);
+
 // Middlewares
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Auth.js handler
+app.use('/api/auth/*', ExpressAuth(authConfig));
 
 // Healthcheck endpoint
 app.get('/health', async (req: Request, res: Response): Promise<void> => {
@@ -44,11 +53,12 @@ app.get('/health', async (req: Request, res: Response): Promise<void> => {
   }
 });
 
-// Routes
-app.use('/api/vehiculos', vehiculosRoutes);
-app.use('/api/repuestos', repuestosRoutes);
-app.use('/api/usuarios', usuariosRoutes);
-app.use('/api/citas', citasRoutes);
+// Routers
+app.use('/api/vehicles', vehiclesRoutes);
+app.use('/api/parts', partsRoutes);
+app.use('/api/users', usersRoutes);
+app.use('/api/appointments', appointmentsRoutes);
+app.use('/api/mcp', mcpRoutes);
 
 // Fallback for undefined routes (JSON only)
 app.use((req: Request, res: Response): void => {
