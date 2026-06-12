@@ -6,7 +6,7 @@ import { ResultSetHeader } from 'mysql2';
 // Register a new user
 export const registerUser = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { name, email, password_hash, role } = req.body;
+    const { name, email, password_hash } = req.body;
 
     // Basic validation
     if (!name || !email || !password_hash) {
@@ -20,9 +20,9 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
 
     const sql = `
       INSERT INTO users (name, email, password_hash, role_id) 
-      VALUES (?, ?, ?, COALESCE((SELECT id FROM roles WHERE name = ?), (SELECT id FROM roles WHERE name = 'retail_client')))
+      VALUES (?, ?, ?, 1)
     `;
-    const values = [name, email, hashedPassword, role || 'retail_client'];
+    const values = [name, email, hashedPassword];
 
     const [result] = await pool.query<ResultSetHeader>(sql, values);
 
@@ -30,8 +30,7 @@ export const registerUser = async (req: Request, res: Response): Promise<void> =
       message: 'User registered successfully',
       id: result.insertId,
       name,
-      email,
-      role: role || 'retail_client'
+      email
     });
   } catch (error: any) {
     if (error.code === 'ER_DUP_ENTRY') {

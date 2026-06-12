@@ -53,6 +53,21 @@ app.get('/health', async (req: Request, res: Response): Promise<void> => {
   }
 });
 
+// Root endpoint
+app.get('/', (req: Request, res: Response): void => {
+  res.status(200).json({
+    message: 'Welcome to the AutoParts WebHub API',
+    description: 'This is a backend-only REST API.',
+    endpoints: {
+      health: '/health',
+      session: '/api/auth/session',
+      signin: '/api/auth/signin',
+      vehicles: '/api/vehicles/brands',
+      parts: '/api/parts'
+    }
+  });
+});
+
 // Routers
 app.use('/api/vehicles', vehiclesRoutes);
 app.use('/api/parts', partsRoutes);
