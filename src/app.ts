@@ -9,6 +9,7 @@ import partsRoutes from './routes/parts.routes';
 import usersRoutes from './routes/users.routes';
 import appointmentsRoutes from './routes/appointments.routes';
 import mcpRoutes from './mcp/mcp.routes';
+import chatRoutes from './routes/chat.routes';
 
 dotenv.config();
 
@@ -63,7 +64,8 @@ app.get('/', (req: Request, res: Response): void => {
       session: '/api/auth/session',
       signin: '/api/auth/signin',
       vehicles: '/api/vehicles/brands',
-      parts: '/api/parts'
+      parts: '/api/parts',
+      chat: '/api/chat'
     }
   });
 });
@@ -74,6 +76,7 @@ app.use('/api/parts', partsRoutes);
 app.use('/api/users', usersRoutes);
 app.use('/api/appointments', appointmentsRoutes);
 app.use('/api/mcp', mcpRoutes);
+app.use('/api/chat', chatRoutes);
 
 // Fallback for undefined routes (JSON only)
 app.use((req: Request, res: Response): void => {

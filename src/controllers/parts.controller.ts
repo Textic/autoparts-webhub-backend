@@ -1,16 +1,27 @@
 import { Request, Response } from 'express';
 import pool from '../config/db';
 
-// Get all parts (optionally filtered by category)
+// Get all parts (optionally filtered by category and/or vehicle compatibility)
 export const getParts = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { category } = req.query;
-    let query = 'SELECT * FROM parts';
+    const { category, vehicle_id } = req.query;
+    let query = 'SELECT p.* FROM parts p';
     const queryParams: any[] = [];
+    const whereClauses: string[] = [];
+
+    if (vehicle_id) {
+      query = 'SELECT p.* FROM parts p INNER JOIN part_compatibilities pc ON p.id = pc.part_id';
+      whereClauses.push('pc.vehicle_id = ?');
+      queryParams.push(Number(vehicle_id));
+    }
 
     if (category) {
-      query += ' WHERE category = ?';
+      whereClauses.push('p.category = ?');
       queryParams.push(category);
+    }
+
+    if (whereClauses.length > 0) {
+      query += ' WHERE ' + whereClauses.join(' AND ');
     }
 
     const [rows] = await pool.query(query, queryParams);
