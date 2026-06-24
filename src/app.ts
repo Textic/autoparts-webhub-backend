@@ -10,6 +10,8 @@ import usersRoutes from './routes/users.routes';
 import appointmentsRoutes from './routes/appointments.routes';
 import mcpRoutes from './mcp/mcp.routes';
 import chatRoutes from './routes/chat.routes';
+import settingsRoutes from './routes/settings.routes';
+
 
 dotenv.config();
 
@@ -77,6 +79,8 @@ app.use('/api/users', usersRoutes);
 app.use('/api/appointments', appointmentsRoutes);
 app.use('/api/mcp', mcpRoutes);
 app.use('/api/chat', chatRoutes);
+app.use('/api/settings', settingsRoutes);
+
 
 // Fallback for undefined routes (JSON only)
 app.use((req: Request, res: Response): void => {

@@ -74,6 +74,61 @@ mcpServer.registerTool(
   },
   async ({ user_id, part_id, quantity, date, time }) => {
     try {
+      // Obtener configuración del sistema de la DB
+      const [settingsRows] = await pool.query('SELECT setting_key, setting_value FROM system_settings');
+      const settingsMap = new Map((settingsRows as any[]).map(row => [row.setting_key, row.setting_value]));
+
+      const limitStr = settingsMap.get('hourly_appointment_limit') || '20';
+      const startTimeStr = settingsMap.get('allow_start_time') || '09:00';
+      const endTimeStr = settingsMap.get('allow_end_time') || '17:30';
+
+      const maxAllowed = parseInt(limitStr, 10);
+      const [startH, startM] = startTimeStr.split(':').map(Number);
+      const [endH, endM] = endTimeStr.split(':').map(Number);
+      const minTime = startH * 60 + startM;
+      const maxTime = endH * 60 + endM;
+
+      // 1. Validar horario (allow_start_time - allow_end_time)
+      const parts = time.split(':');
+      const hour = parseInt(parts[0], 10);
+      const minute = parseInt(parts[1], 10);
+      const timeInMinutes = hour * 60 + minute;
+
+      if (isNaN(timeInMinutes) || timeInMinutes < minTime || timeInMinutes > maxTime) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Scheduling error: El horario de retiro permitido es únicamente entre las ${startTimeStr} y las ${endTimeStr}.`,
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      // 2. Validar límite por hora (Máximo X citas en la misma hora)
+      const countSql = `
+        SELECT COUNT(*) as count 
+        FROM appointments 
+        WHERE appointment_date = ? 
+          AND HOUR(appointment_time) = ?
+      `;
+      const [countRows] = await pool.query(countSql, [date, hour]);
+      const currentCount = (countRows as any)[0]?.count || 0;
+
+      if (currentCount >= maxAllowed) {
+        return {
+          content: [
+            {
+              type: 'text',
+              text: `Scheduling error: Lo sentimos, el cupo de retiro para el bloque de las ${hour}:00 a las ${hour}:59 está completo (límite de ${maxAllowed} citas por hora).`,
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      // 3. Crear cita
       const sql = `
         INSERT INTO appointments (user_id, part_id, quantity, appointment_date, appointment_time, status, created_by_ia)
         VALUES (?, ?, ?, ?, ?, 'pending', 1)
@@ -90,17 +145,6 @@ mcpServer.registerTool(
         ],
       };
     } catch (error: any) {
-      if (error.code === 'ER_DUP_ENTRY') {
-        return {
-          content: [
-            {
-              type: 'text',
-              text: `Scheduling error: An appointment is already scheduled for date ${date} and time ${time}. Please suggest another slot.`,
-            },
-          ],
-          isError: true,
-        };
-      }
       if (error.code === 'ER_NO_REFERENCED_ROW_2' || error.code === 'ER_NO_REFERENCED_ROW') {
         return {
           content: [

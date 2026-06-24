@@ -66,3 +66,52 @@ export const createAppointment = async (req: Request, res: Response): Promise<vo
     });
   }
 };
+
+export const getAppointments = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const sql = `
+      SELECT a.id, a.user_id, a.part_id, a.quantity, a.appointment_date, a.appointment_time, a.status, a.created_by_ia,
+             u.name as user_name, u.email as user_email,
+             p.name as part_name, p.sku as part_sku, p.price as part_price
+      FROM appointments a
+      JOIN users u ON a.user_id = u.id
+      JOIN parts p ON a.part_id = p.id
+      ORDER BY a.appointment_date DESC, a.appointment_time DESC
+    `;
+    const [rows] = await pool.query(sql);
+    res.status(200).json(rows);
+  } catch (error: any) {
+    res.status(500).json({
+      error: 'Error retrieving appointments',
+      message: error.message || error
+    });
+  }
+};
+
+export const updateAppointmentStatus = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { status } = req.body;
+
+    if (!status) {
+      res.status(400).json({ error: 'Missing required field: status' });
+      return;
+    }
+
+    const sql = `UPDATE appointments SET status = ? WHERE id = ?`;
+    const [result] = await pool.query<ResultSetHeader>(sql, [status, id]);
+
+    if (result.affectedRows === 0) {
+      res.status(404).json({ error: 'Appointment not found' });
+      return;
+    }
+
+    res.status(200).json({ message: 'Appointment status updated successfully', id, status });
+  } catch (error: any) {
+    res.status(500).json({
+      error: 'Error updating appointment status',
+      message: error.message || error
+    });
+  }
+};
+

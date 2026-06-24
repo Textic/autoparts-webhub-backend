@@ -18,7 +18,7 @@ services:
       - AUTH_GOOGLE_SECRET=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
       - AUTH_SECRET=7a0e38bc86f1e1493012a67be92c19e830e2f89c09c91656b825da1123f1ba9c
       - AUTH_TRUST_HOST=true
-      - GEMINI_API_KEY=AIzaSyDwiJpUNLX0KdTfB-UIYaIjq2rDbO8Hd0U
+      - GEMINI_API_KEY=${GEMINI_API_KEY}
     volumes:
       - .:/app
       - /app/node_modules

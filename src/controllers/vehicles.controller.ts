@@ -59,3 +59,37 @@ export const getYearsByModel = async (req: Request, res: Response): Promise<void
     });
   }
 };
+
+export const getVehicles = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { brand, model, year } = req.query;
+    let query = 'SELECT * FROM vehicles';
+    const params: any[] = [];
+    const clauses: string[] = [];
+
+    if (brand) {
+      clauses.push('brand = ?');
+      params.push(brand);
+    }
+    if (model) {
+      clauses.push('model = ?');
+      params.push(model);
+    }
+    if (year) {
+      clauses.push('manufacturing_year = ?');
+      params.push(Number(year));
+    }
+
+    if (clauses.length > 0) {
+      query += ' WHERE ' + clauses.join(' AND ');
+    }
+
+    const [rows] = await pool.query(query, params);
+    res.status(200).json(rows);
+  } catch (error: any) {
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: error.message || error
+    });
+  }
+};
