@@ -35,8 +35,12 @@ jobs:
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            cd /home/${{ secrets.EC2_USERNAME }}/autoparts-webhub-backend
+            if [ ! -d "$HOME/autoparts-webhub-backend" ]; then
+              git clone https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git "$HOME/autoparts-webhub-backend"
+            fi
+            cd "$HOME/autoparts-webhub-backend"
             git pull origin main || git pull origin master
             echo "GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }}" > .env
-            docker compose down
+            echo "DB_HOST=${{ secrets.DB_HOST || 'host.docker.internal' }}" >> .env
+            docker compose down || true
             docker compose up -d --build
