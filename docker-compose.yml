@@ -14,10 +14,10 @@ services:
       - DB_PASSWORD=autoparts_password
       - DB_NAME=autoparts_webhub_db
       - DB_PORT=3306
-      - AUTH_GOOGLE_ID=259982290521-it6hea8avuhjcib8rtfmtgoissl0k6dl.apps.googleusercontent.com
-      - AUTH_GOOGLE_SECRET=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
-      - AUTH_SECRET=7a0e38bc86f1e1493012a67be92c19e830e2f89c09c91656b825da1123f1ba9c
-      - AUTH_TRUST_HOST=true
+      - AUTH_GOOGLE_ID=${AUTH_GOOGLE_ID}
+      - AUTH_GOOGLE_SECRET=${AUTH_GOOGLE_SECRET}
+      - AUTH_SECRET=${AUTH_SECRET}
+      - AUTH_TRUST_HOST=${AUTH_TRUST_HOST:-true}
       - GEMINI_API_KEY=${GEMINI_API_KEY}
     volumes:
       - .:/app

@@ -27,7 +27,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Auth.js handler
-app.use('/api/auth/*', ExpressAuth(authConfig));
+app.use('/api/auth', ExpressAuth(authConfig));
 
 // Healthcheck endpoint
 app.get('/health', async (req: Request, res: Response): Promise<void> => {
