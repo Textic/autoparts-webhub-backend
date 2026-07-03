@@ -54,3 +54,81 @@ export const getPartById = async (req: Request, res: Response): Promise<void> =>
     });
   }
 };
+
+// Create a new part
+export const createPart = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { sku, name, category, price, available_stock, warehouse_location } = req.body;
+
+    if (!sku || !name || !category || price === undefined || available_stock === undefined || !warehouse_location) {
+      res.status(400).json({ error: 'Missing required fields' });
+      return;
+    }
+
+    const sql = `
+      INSERT INTO parts (sku, name, category, price, available_stock, warehouse_location)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `;
+    const [result] = await pool.query(sql, [sku, name, category, Number(price), Number(available_stock), warehouse_location]);
+    const insertId = (result as any).insertId;
+
+    res.status(201).json({ id: insertId, sku, name, category, price, available_stock, warehouse_location });
+  } catch (error: any) {
+    res.status(500).json({
+      error: 'Error creating part',
+      message: error.message || error
+    });
+  }
+};
+
+// Update an existing part
+export const updatePart = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const { sku, name, category, price, available_stock, warehouse_location } = req.body;
+
+    if (!sku || !name || !category || price === undefined || available_stock === undefined || !warehouse_location) {
+      res.status(400).json({ error: 'Missing required fields' });
+      return;
+    }
+
+    const sql = `
+      UPDATE parts
+      SET sku = ?, name = ?, category = ?, price = ?, available_stock = ?, warehouse_location = ?
+      WHERE id = ?
+    `;
+    const [result] = await pool.query(sql, [sku, name, category, Number(price), Number(available_stock), warehouse_location, Number(id)]);
+    
+    if ((result as any).affectedRows === 0) {
+      res.status(404).json({ error: 'Part not found' });
+      return;
+    }
+
+    res.status(200).json({ id: Number(id), sku, name, category, price, available_stock, warehouse_location });
+  } catch (error: any) {
+    res.status(500).json({
+      error: 'Error updating part',
+      message: error.message || error
+    });
+  }
+};
+
+// Delete a part by ID
+export const deletePart = async (req: Request, res: Response): Promise<void> => {
+  try {
+    const { id } = req.params;
+    const [result] = await pool.query('DELETE FROM parts WHERE id = ?', [Number(id)]);
+
+    if ((result as any).affectedRows === 0) {
+      res.status(404).json({ error: 'Part not found' });
+      return;
+    }
+
+    res.status(200).json({ message: 'Part deleted successfully' });
+  } catch (error: any) {
+    res.status(500).json({
+      error: 'Error deleting part',
+      message: error.message || error
+    });
+  }
+};

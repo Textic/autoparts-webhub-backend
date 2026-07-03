@@ -7,7 +7,7 @@ const ai = new GoogleGenAI({});
 
 export const handleChat = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { message, history } = req.body;
+    const { message, history, currentPartId } = req.body;
 
     if (!message) {
       res.status(400).json({ error: 'Missing required field: message' });
@@ -25,7 +25,36 @@ export const handleChat = async (req: Request, res: Response): Promise<void> => 
       parts: [{ text: message }]
     });
 
-    const systemInstruction = 'Eres el asistente de IA de AutoParts WebHub. Ayuda al usuario a buscar repuestos, verificar stock y agendar citas de retiro. Sé conciso, profesional y responde siempre en español.';
+    let userContext = 'No has iniciado sesión (visitante anónimo).';
+    if (res?.locals?.session && res?.locals?.session?.user) {
+      const u = res.locals.session.user;
+      userContext = `El usuario actual ha iniciado sesión. Detalles: ID: ${u.id}, Nombre: ${u.name}, Correo: ${u.email}, Rol: ${u.role}.`;
+    }
+
+    let productContext = 'El usuario no está visualizando ningún repuesto en particular en este momento.';
+    if (currentPartId) {
+      try {
+        const [rows] = await pool.query('SELECT * FROM parts WHERE id = ?', [Number(currentPartId)]);
+        const parts = rows as any[];
+        if (parts.length > 0) {
+          const p = parts[0];
+          productContext = `El usuario está visualizando el repuesto: ID: ${p.id}, Nombre: "${p.name}", SKU: "${p.sku}", Categoría: "${p.category}", Precio: $${p.price} CLP, Stock: ${p.available_stock} unidades, Ubicación: "${p.warehouse_location}".`;
+        }
+      } catch (dbErr) {
+        console.error('Error fetching part details for chat context:', dbErr);
+      }
+    }
+
+    const systemInstruction = `Eres el asistente de IA de AutoParts WebHub. Ayuda al usuario a buscar repuestos, verificar stock y agendar citas de retiro. Sé conciso, profesional y responde siempre en español.
+
+CONTEXTO ACTUAL:
+- ${userContext}
+- ${productContext}
+
+INSTRUCCIONES IMPORTANTES:
+1. Si el usuario te pide programar/agendar una cita de retiro para el repuesto que está visualizando, utiliza la función \`schedule_pickup_appointment\` pasando el ID del usuario (${res?.locals?.session?.user?.id || 'null'}) y el ID del repuesto (${currentPartId || 'null'}).
+2. Si el usuario no ha iniciado sesión, indícales amablemente que deben iniciar sesión para poder agendar una cita.
+3. Si el usuario te pregunta sobre el producto que está viendo, utiliza la información provista en el contexto.`;
 
     const tools: any = [
       {
