@@ -2,8 +2,31 @@ import { Request, Response } from 'express';
 import { GoogleGenAI } from '@google/genai';
 import pool from '../config/db';
 
-// Initialize the Google GenAI SDK. It automatically loads GEMINI_API_KEY from environment variables.
 const ai = new GoogleGenAI({});
+
+const generateContentWithRetry = async (ai: GoogleGenAI, options: any, retries = 2, delayMs = 600): Promise<any> => {
+  for (let i = 0; i <= retries; i++) {
+    try {
+      return await ai.models.generateContent(options);
+    } catch (err: any) {
+      const errStr = String(err.message || err);
+      const isRateLimitOrUnavailable = 
+        errStr.includes('503') || 
+        errStr.includes('UNAVAILABLE') || 
+        errStr.includes('429') || 
+        errStr.includes('ResourceExhausted') ||
+        err.status === 503 ||
+        err.status === 429;
+      
+      if (isRateLimitOrUnavailable && i < retries) {
+        console.warn(`Gemini API 503/429 detected. Retrying in ${delayMs}ms... (Attempt ${i + 1}/${retries})`);
+        await new Promise(resolve => setTimeout(resolve, delayMs));
+        continue;
+      }
+      throw err;
+    }
+  }
+};
 
 export const handleChat = async (req: Request, res: Response): Promise<void> => {
   try {
@@ -45,16 +68,27 @@ export const handleChat = async (req: Request, res: Response): Promise<void> => 
       }
     }
 
+    const serverDateTime = new Date().toLocaleString('es-CL', { timeZone: 'America/Santiago' });
     const systemInstruction = `Eres el asistente de IA de AutoParts WebHub. Ayuda al usuario a buscar repuestos, verificar stock y agendar citas de retiro. Sé conciso, profesional y responde siempre en español.
 
 CONTEXTO ACTUAL:
+- Fecha y hora actual del servidor: ${serverDateTime} (Zona Horaria Chile)
 - ${userContext}
 - ${productContext}
 
 INSTRUCCIONES IMPORTANTES:
-1. Si el usuario te pide programar/agendar una cita de retiro para el repuesto que está visualizando, utiliza la función \`schedule_pickup_appointment\` pasando el ID del usuario (${res?.locals?.session?.user?.id || 'null'}) y el ID del repuesto (${currentPartId || 'null'}).
-2. Si el usuario no ha iniciado sesión, indícales amablemente que deben iniciar sesión para poder agendar una cita.
-3. Si el usuario te pregunta sobre el producto que está viendo, utiliza la información provista en el contexto.`;
+1. Si el usuario te pide agendar una cita de retiro, utiliza la función \`schedule_pickup_appointment\`. 
+   - Debes pasar el ID del usuario actual: ${res?.locals?.session?.user?.id || 'null'}.
+   - Debes pasar el ID del repuesto (\`part_id\`). Si el usuario está visualizando un repuesto en el contexto (ID: ${currentPartId || 'ninguno'}), usa ese ID.
+   - Si el usuario NO está visualizando ningún repuesto pero te ha indicado qué repuesto desea por su nombre o SKU (por ejemplo: "Pastillas de Freno Premium"), debes realizar OBLIGATORIAMENTE la búsqueda del repuesto de forma automática en segundo plano llamando a la función "check_part_stock" para obtener su ID. NUNCA le pidas permiso al usuario para buscar el repuesto ni le preguntes por el SKU o ID si el usuario ya te dio el nombre del repuesto; búscalo tú mismo de forma proactiva y automática para resolver el ID.
+   - NUNCA pases null o undefined para el part_id.
+2. Puedes recibir la fecha y hora en formatos relativos o naturales (por ejemplo: "mañana", "el próximo lunes", "hoy", "a las 4 de la tarde"). Debes calcular la fecha correcta basándote en la "Fecha y hora actual del servidor" suministrada arriba, y transformarla al formato estándar YYYY-MM-DD y HH:MM antes de invocar la función \`schedule_pickup_appointment\`.
+3. Si el usuario no indica un año, asume el año de la fecha actual del servidor.
+4. Si el usuario no ha iniciado sesión, indícales amablemente que deben iniciar sesión para poder agendar una cita.
+5. Si el usuario te pregunta sobre el producto que está viendo, utiliza la información provista en el contexto.
+6. NUNCA inventes, simules o asumas que has agendado una cita con éxito en tus respuestas si no has ejecutado previamente la función "schedule_pickup_appointment" y recibido una respuesta con "status: 'success'". Si te falta información clave como la fecha o la hora, pregúntale educadamente al usuario por los datos faltantes en lugar de simular el agendamiento.
+7. Para cualquier consulta sobre precio, stock, ubicación en bodega o SKU de repuestos, debes llamar OBLIGATORIAMENTE a la función "check_part_stock". NUNCA supongas, inventes o aproximes el precio, stock o ubicación física de un producto en base a tu conocimiento general. Si no ejecutas la función "check_part_stock" para el producto específico consultado, debes responder que no posees la información actualizada y que necesitas realizar la búsqueda.
+8. Al comunicarle al usuario el resultado del agendamiento, habla de forma amigable, fluida y profesional en español. NUNCA utilices jerga técnica o de código como decir 'el estado es "success"', 'status: success', 'status: error', etc. Simplemente di "Tu cita ha sido agendada con éxito..." o explica de forma clara y humana el problema si la cita fue rechazada por horario o límites.`;
 
     const tools: any = [
       {
@@ -107,8 +141,9 @@ INSTRUCCIONES IMPORTANTES:
       }
     ];
 
-    let response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash-lite',
+    console.log('CONTENTS SENT TO GEMINI (FIRST CALL):', JSON.stringify(contents, null, 2));
+    let response = await generateContentWithRetry(ai, {
+      model: 'gemini-2.5-flash',
       contents: contents,
       config: {
         systemInstruction,
@@ -163,57 +198,64 @@ INSTRUCCIONES IMPORTANTES:
             console.log(`[Tool schedule_pickup_appointment] Recibido args:`, args);
             const { user_id, part_id, quantity, date, time } = args as any;
 
-            // Obtener configuración del sistema de la DB
-            const [settingsRows] = await pool.query('SELECT setting_key, setting_value FROM system_settings');
-            const settingsMap = new Map((settingsRows as any[]).map(row => [row.setting_key, row.setting_value]));
-
-            const limitStr = settingsMap.get('hourly_appointment_limit') || '20';
-            const startTimeStr = settingsMap.get('allow_start_time') || '09:00';
-            const endTimeStr = settingsMap.get('allow_end_time') || '17:30';
-
-            const maxAllowed = parseInt(limitStr, 10);
-            const [startH, startM] = startTimeStr.split(':').map(Number);
-            const [endH, endM] = endTimeStr.split(':').map(Number);
-            const minTime = startH * 60 + startM;
-            const maxTime = endH * 60 + endM;
-
-            // 1. Validar horario (allow_start_time - allow_end_time)
-            const parts = time.split(':');
-            const hour = parseInt(parts[0], 10);
-            const minute = parseInt(parts[1], 10);
-            const timeInMinutes = hour * 60 + minute;
-
-            if (isNaN(timeInMinutes) || timeInMinutes < minTime || timeInMinutes > maxTime) {
+            if (!part_id || isNaN(Number(part_id))) {
               result = { 
                 status: 'error', 
-                error: `El horario de retiro permitido es únicamente entre las ${startTimeStr} y las ${endTimeStr}.` 
+                error: 'El ID del repuesto (part_id) es inválido o no fue especificado. Por favor, realiza una búsqueda del repuesto antes de agendar.' 
               };
             } else {
-              // 2. Validar límite por hora (Máximo X citas en la misma hora)
-              const countSql = `
-                SELECT COUNT(*) as count 
-                FROM appointments 
-                WHERE appointment_date = ? 
-                  AND HOUR(appointment_time) = ?
-              `;
-              const [countRows] = await pool.query(countSql, [date, hour]);
-              const currentCount = (countRows as any)[0]?.count || 0;
+              // Obtener configuración del sistema de la DB
+              const [settingsRows] = await pool.query('SELECT setting_key, setting_value FROM system_settings');
+              const settingsMap = new Map((settingsRows as any[]).map(row => [row.setting_key, row.setting_value]));
 
-              if (currentCount >= maxAllowed) {
+              const limitStr = settingsMap.get('hourly_appointment_limit') || '20';
+              const startTimeStr = settingsMap.get('allow_start_time') || '09:00';
+              const endTimeStr = settingsMap.get('allow_end_time') || '17:30';
+
+              const maxAllowed = parseInt(limitStr, 10);
+              const [startH, startM] = startTimeStr.split(':').map(Number);
+              const [endH, endM] = endTimeStr.split(':').map(Number);
+              const minTime = startH * 60 + startM;
+              const maxTime = endH * 60 + endM;
+
+              // 1. Validar horario (allow_start_time - allow_end_time)
+              const parts = time.split(':');
+              const hour = parseInt(parts[0], 10);
+              const minute = parseInt(parts[1], 10);
+              const timeInMinutes = hour * 60 + minute;
+
+              if (isNaN(timeInMinutes) || timeInMinutes < minTime || timeInMinutes > maxTime) {
                 result = { 
                   status: 'error', 
-                  error: `Lo sentimos, el cupo de retiro para el bloque de las ${hour}:00 a las ${hour}:59 está completo (límite de ${maxAllowed} citas por hora). Por favor, elige o sugiere otra hora.` 
+                  error: `El horario de retiro permitido es únicamente entre las ${startTimeStr} y las ${endTimeStr}.` 
                 };
               } else {
-                // 3. Crear cita
-                const qty = quantity || 1;
-                const sql = `
-                  INSERT INTO appointments (user_id, part_id, quantity, appointment_date, appointment_time, status, created_by_ia)
-                  VALUES (?, ?, ?, ?, ?, 'pending', 1)
+                // 2. Validar límite por hora (Máximo X citas en la misma hora)
+                const countSql = `
+                  SELECT COUNT(*) as count 
+                  FROM appointments 
+                  WHERE appointment_date = ? 
+                    AND HOUR(appointment_time) = ?
                 `;
-                const [insertResult] = await pool.query(sql, [user_id, part_id, qty, date, time]);
-                const insertId = (insertResult as any).insertId;
-                result = { status: 'success', appointment_id: insertId };
+                const [countRows] = await pool.query(countSql, [date, hour]);
+                const currentCount = (countRows as any)[0]?.count || 0;
+
+                if (currentCount >= maxAllowed) {
+                  result = { 
+                    status: 'error', 
+                    error: `Lo sentimos, el cupo de retiro para el bloque de las ${hour}:00 a las ${hour}:59 está completo (límite de ${maxAllowed} citas por hora). Por favor, elige o sugiere otra hora.` 
+                  };
+                } else {
+                  // 3. Crear cita
+                  const qty = quantity || 1;
+                  const sql = `
+                    INSERT INTO appointments (user_id, part_id, quantity, appointment_date, appointment_time, status, created_by_ia)
+                    VALUES (?, ?, ?, ?, ?, 'pending', 1)
+                  `;
+                  const [insertResult] = await pool.query(sql, [user_id, part_id, qty, date, time]);
+                  const insertId = (insertResult as any).insertId;
+                  result = { status: 'success', appointment_id: insertId };
+                }
               }
             }
           } else {
@@ -234,13 +276,14 @@ INSTRUCCIONES IMPORTANTES:
 
       // 2. Add the tool execution result to our conversation history
       contents.push({
-        role: 'tool',
+        role: 'function',
         parts: toolParts
       });
 
       // 3. Request the model to continue generation using the tool results
-      response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash-lite',
+      console.log('CONTENTS SENT TO GEMINI (LOOP CALL):', JSON.stringify(contents, null, 2));
+      response = await generateContentWithRetry(ai, {
+        model: 'gemini-2.5-flash',
         contents: contents,
         config: {
           systemInstruction,
@@ -249,7 +292,10 @@ INSTRUCCIONES IMPORTANTES:
       });
     }
 
-    res.status(200).json({ reply: response.text });
+    console.log('Gemini raw response:', JSON.stringify(response, null, 2));
+    const replyText = response.text || response.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    console.log('Gemini final reply:', replyText);
+    res.status(200).json({ reply: replyText });
   } catch (error: any) {
     console.error('Error in handleChat:', error);
     res.status(500).json({
