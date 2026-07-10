@@ -58,21 +58,23 @@ export const getPartById = async (req: Request, res: Response): Promise<void> =>
 // Create a new part
 export const createPart = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { sku, name, category, price, available_stock, warehouse_location } = req.body;
+    const { sku, name, category, price, available_stock, warehouse_location, image_url } = req.body;
 
     if (!sku || !name || !category || price === undefined || available_stock === undefined || !warehouse_location) {
       res.status(400).json({ error: 'Missing required fields' });
       return;
     }
 
+    const finalImageUrl = image_url && image_url.trim() ? image_url : '/images/repuesto_defecto.png';
+
     const sql = `
-      INSERT INTO parts (sku, name, category, price, available_stock, warehouse_location)
-      VALUES (?, ?, ?, ?, ?, ?)
+      INSERT INTO parts (sku, name, category, price, available_stock, warehouse_location, image_url)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
     `;
-    const [result] = await pool.query(sql, [sku, name, category, Number(price), Number(available_stock), warehouse_location]);
+    const [result] = await pool.query(sql, [sku, name, category, Number(price), Number(available_stock), warehouse_location, finalImageUrl]);
     const insertId = (result as any).insertId;
 
-    res.status(201).json({ id: insertId, sku, name, category, price, available_stock, warehouse_location });
+    res.status(201).json({ id: insertId, sku, name, category, price, available_stock, warehouse_location, image_url: finalImageUrl });
   } catch (error: any) {
     res.status(500).json({
       error: 'Error creating part',
@@ -85,26 +87,28 @@ export const createPart = async (req: Request, res: Response): Promise<void> => 
 export const updatePart = async (req: Request, res: Response): Promise<void> => {
   try {
     const { id } = req.params;
-    const { sku, name, category, price, available_stock, warehouse_location } = req.body;
+    const { sku, name, category, price, available_stock, warehouse_location, image_url } = req.body;
 
     if (!sku || !name || !category || price === undefined || available_stock === undefined || !warehouse_location) {
       res.status(400).json({ error: 'Missing required fields' });
       return;
     }
 
+    const finalImageUrl = image_url && image_url.trim() ? image_url : '/images/repuesto_defecto.png';
+
     const sql = `
       UPDATE parts
-      SET sku = ?, name = ?, category = ?, price = ?, available_stock = ?, warehouse_location = ?
+      SET sku = ?, name = ?, category = ?, price = ?, available_stock = ?, warehouse_location = ?, image_url = ?
       WHERE id = ?
     `;
-    const [result] = await pool.query(sql, [sku, name, category, Number(price), Number(available_stock), warehouse_location, Number(id)]);
+    const [result] = await pool.query(sql, [sku, name, category, Number(price), Number(available_stock), warehouse_location, finalImageUrl, Number(id)]);
     
     if ((result as any).affectedRows === 0) {
       res.status(404).json({ error: 'Part not found' });
       return;
     }
 
-    res.status(200).json({ id: Number(id), sku, name, category, price, available_stock, warehouse_location });
+    res.status(200).json({ id: Number(id), sku, name, category, price, available_stock, warehouse_location, image_url: finalImageUrl });
   } catch (error: any) {
     res.status(500).json({
       error: 'Error updating part',
